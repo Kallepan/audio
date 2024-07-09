@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Recorder with Volume Display</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 50px;
+        }
+
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+
+        audio,
+        .volume {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Audio Recorder</h1>
+    <button id="record">Record</button>
+    <button id="stop" disabled>Stop</button>
+    <audio id="audio" controls></audio>
+    <div class="volume">Volume: <span id="volume">0</span></div>
+
+    <script>
+        const recordButton = document.getElementById('record');
+        const stopButton = document.getElementById('stop');
+        const audioElement = document.getElementById('audio');
+        const volumeElement = document.getElementById('volume');
+
+        let mediaRecorder;
+        let audioChunks = [];
+        let audioContext, analyser, microphone, javascriptNode;
+
+        recordButton.addEventListener('click', async () => {
+            recordButton.disabled = true;
+            stopButton.disabled = false;
+
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+
+            audioContext = new AudioContext();
+            analyser = audioContext.createAnalyser();
+            microphone = audioContext.createMediaStreamSource(stream);
+            javascriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+
+            microphone.connect(analyser);
+            analyser.connect(javascriptNode);
+            javascriptNode.connect(audioContext.destination);
+
+            javascriptNode.onaudioprocess = function () {
+                const array = new Uint8Array(analyser.frequencyBinCount);
+                analyser.getByteFrequencyData(array);
+                let values = 0;
+
+                const length = array.length;
+                for (let i = 0; i < length; i++) {
+                    values += (array[i]);
+                }
+
+                const average = values / length;
+                volumeElement.innerText = Math.round(average);
+            };
+
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                audioElement.src = audioUrl;
+                audioChunks = [];
+
+                // Disconnect the audio nodes
+                javascriptNode.disconnect();
+                analyser.disconnect();
+                microphone.disconnect();
+            };
+
+            mediaRecorder.start();
+        });
+
+        stopButton.addEventListener('click', () => {
+            recordButton.disabled = false;
+            stopButton.disabled = true;
+            mediaRecorder.stop();
+        });
+    </script>
+</body>
+
+</html>
