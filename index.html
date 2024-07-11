@@ -40,63 +40,42 @@
         const audioElement = document.getElementById('audio');
         const volumeElement = document.getElementById('volume');
 
-        let mediaRecorder;
-        let audioChunks = [];
-        let audioContext, analyser, microphone, javascriptNode;
+        const audioContext = new AudioContext();
 
         recordButton.addEventListener('click', async () => {
+            // Check if the browser supports the MediaDevices API
+            if (!navigator.mediaDevices) {
+                alert('getUserMedia() not supported.');
+                return;
+            }
+
+            audioContext.resume();
+
+            // Disable the record button and enable the stop button
             recordButton.disabled = true;
             stopButton.disabled = false;
 
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
+            // Create an audio context and get the audio stream
+            await audioContext.audioWorklet.addModule('processor.js');
+            const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const micNode = audioContext.createMediaStreamSource(mediaStream);
 
-            audioContext = new AudioContext();
-            analyser = audioContext.createAnalyser();
-            microphone = audioContext.createMediaStreamSource(stream);
-            javascriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+            // Create the audio nodes
+            const audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-recording-processor');
 
-            microphone.connect(analyser);
-            analyser.connect(javascriptNode);
-            javascriptNode.connect(audioContext.destination);
-
-            javascriptNode.onaudioprocess = function () {
-                const array = new Uint8Array(analyser.frequencyBinCount);
-                analyser.getByteFrequencyData(array);
-                let values = 0;
-
-                const length = array.length;
-                for (let i = 0; i < length; i++) {
-                    values += (array[i]);
-                }
-
-                const average = values / length;
-                volumeElement.innerText = Math.round(average);
+            audioWorkletNode.port.onmessage = event => {
+                console.log(event.data);
+                volumeElement.innerText = event.data.value;
             };
 
-            mediaRecorder.ondataavailable = event => {
-                audioChunks.push(event.data);
-            };
-
-            mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
-                const audioUrl = URL.createObjectURL(audioBlob);
-                audioElement.src = audioUrl;
-                audioChunks = [];
-
-                // Disconnect the audio nodes
-                javascriptNode.disconnect();
-                analyser.disconnect();
-                microphone.disconnect();
-            };
-
-            mediaRecorder.start();
+            micNode.connect(audioWorkletNode).connect(audioContext.destination);
         });
 
         stopButton.addEventListener('click', () => {
+            audioContext.close();
+
             recordButton.disabled = false;
             stopButton.disabled = true;
-            mediaRecorder.stop();
         });
     </script>
 </body>
